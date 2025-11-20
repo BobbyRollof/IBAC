@@ -56,6 +56,13 @@ def evaluate_with_authzen(req) -> Dict[str, Any]:
         if now - ctx_time_utc > timedelta(hours=1):
             return {"decision": "deny", "reason": "stale request time"}
 
+        if req.context.location != "NL":
+            return {"decision": "deny", "reason": "location not allowed"}
+
+        # Device check (example: only allow "trusted")
+        if req.context.device != "trusted":
+            return {"decision": "deny", "reason": "device not trusted"}
+
         # Example subject id constraint (email)
         if "@" not in req.subject.id:
             return {"decision": "deny", "reason": "invalid subject id"}
