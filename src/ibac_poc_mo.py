@@ -1,7 +1,7 @@
 import datetime
 from enum import Enum
-from fastapi import FastAPI
-from pydantic import BaseModel, ConfigDict
+from fastapi import FastAPI, HTTPException, requests
+from pydantic import BaseModel, ConfigDict, EmailStr
 
 app = FastAPI()
 
@@ -76,7 +76,7 @@ class Action(BaseModel):
 class Context(BaseModel):
     time: datetime  # Represents the timestamp context (e.g., ISO datetime string)
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="allow")
 
 class PEPRequest(BaseModel):
     """
@@ -88,6 +88,13 @@ class PEPRequest(BaseModel):
     context: Context  # The contextual information for the request
 
     model_config = ConfigDict(extra="ignore")
+
+class SubjectId(BaseModel):
+    format: str
+    email: EmailStr
+
+class SharedSignalRequest(BaseModel):
+    subject_id: SubjectId
 
 def check_mandatory_signals(context: dict) -> bool:
     # Validate mandatory signals (already checks valid locations and devices through pydantic validation)
@@ -102,13 +109,31 @@ def check_discretionary_signals(resource: Resource, context: dict) -> bool:
     allowed_perms = ResourcePermsDict.get(resource.type, set())
     return perms == allowed_perms
 
+def send_alert():
+    # Placeholder function to send alerts
+    response_siem = requests.get("http://localhost:8003/siem")
+    response_risc = requests.get("http://localhost:8002/risc")
+    print(f"Alert sent to SIEM: {response_siem.json()}")
+    print(f"Alert sent to RISC: {response_risc.json()}")
+
+#http://localhost:8001
 @app.post("/access-control")
 def evaluate_access(request: PEPRequest):
     resource = request.resource
     context = request.context
 
     if not check_mandatory_signals(context):
-        return {"decision": "deny", "reason": "Mandatory signals check failed"}
-    
+        send_alert()
+        raise HTTPException(
+            status_code=403,
+            detail={"decision": "deny", "reason": "Mandatory signals check failed"}
+        )
+
     if not check_discretionary_signals(resource, context):
-        return {"decision": "deny", "reason": "Discretionary signals check failed"}
+        send_alert()
+        raise HTTPException(
+            status_code=403,
+            detail={"decision": "deny", "reason": "Discretionary signals check failed"}
+        )
+    
+    return {"decision": "allow", "reason": "Access granted"}
