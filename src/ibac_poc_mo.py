@@ -5,12 +5,6 @@ from pydantic import BaseModel, ConfigDict
 
 app = FastAPI()
 
-# Mock policy store
-POLICIES = {
-    "incident_resolution": {"allowed_roles": ["DevOps", "SRE"], "time_bound": True},
-    "data_access": {"allowed_roles": ["DataEngineer"], "time_bound": False}
-}
-
 class ValidRoles(Enum):
     DevOps = "DevOps"
     SRE = "SRE"
@@ -65,19 +59,23 @@ ResourcePermsDict = {
 class Subject(BaseModel):
     type: str  # Represents the type of the subject (e.g., "user")
     id: str  # Represents the ID of the subject (e.g., "alice@rabobank.nl")
+
     model_config = ConfigDict(extra="ignore")
 
 class Resource(BaseModel):
     type: ValidResourceTypes  # Represents the type of the resource (e.g., "FINANCIAL_REPORT")
     id: str  # Represents the ID of the resource (e.g., "1")
+
     model_config = ConfigDict(extra="ignore")
 
 class Action(BaseModel):
     name: str  # Represents the action name (e.g., "can_read")
+
     model_config = ConfigDict(extra="ignore")
 
 class Context(BaseModel):
     time: datetime  # Represents the timestamp context (e.g., ISO datetime string)
+
     model_config = ConfigDict(extra="ignore")
 
 class PEPRequest(BaseModel):
@@ -88,6 +86,7 @@ class PEPRequest(BaseModel):
     resource: Resource  # The resource being accessed
     action: Action  # The action requested on the resource
     context: Context  # The contextual information for the request
+
     model_config = ConfigDict(extra="ignore")
 
 def check_mandatory_signals(context: dict) -> bool:
@@ -103,7 +102,6 @@ def check_discretionary_signals(resource: Resource, context: dict) -> bool:
     allowed_perms = ResourcePermsDict.get(resource.type, set())
     return perms == allowed_perms
 
-
 @app.post("/access-control")
 def evaluate_access(request: PEPRequest):
     resource = request.resource
@@ -111,5 +109,6 @@ def evaluate_access(request: PEPRequest):
 
     if not check_mandatory_signals(context):
         return {"decision": "deny", "reason": "Mandatory signals check failed"}
+    
     if not check_discretionary_signals(resource, context):
         return {"decision": "deny", "reason": "Discretionary signals check failed"}
