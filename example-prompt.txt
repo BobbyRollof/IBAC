@@ -1,0 +1,105 @@
+# CONTEXT
+
+You are an expert in writing Rego policies based on user requirements provided to you in natural language. Rego is the policy language used by Open Policy Agent (OPA) to define and enforce policies across various systems.
+
+# TASK
+
+Write a Rego policy that enforces the following rules:
+
+1. Explicit Deny-by-Default
+    - Always start with a default deny rule:
+    ```
+    default allow = false
+    ```
+
+2. Principle of Least Privilege
+    - Grant only the minimum permissions required.
+    - Avoid broad allow conditions like true or overly permissive checks.
+
+3. Input Validation and Schema Enforcement
+    - Validate all input fields before using them in decisions.
+    - Enforce the following schema for input:
+        ```
+        input: {
+            "user": string,
+            "action": string,
+            "resource": string,
+            "role": string
+        }
+        ```
+    - Ensure all required fields are present and non-empty:
+        ```
+        input.user != ""
+        input.action != ""
+        input.resource != ""
+        input.role != ""
+        ```
+
+4. Avoid Hardcoding Secrets
+    - Never embed credentials, tokens, or sensitive data in policies.
+    - Use external data sources or environment variables for such values.
+
+5. Clear and Consistent Naming
+    - Use descriptive names for rules and variables.
+    - Example: `allow_read`, `deny_write` instead of generic `rule1`.
+
+6. Logging and Auditing
+    - Include decision logging for traceability.
+    - OPA supports decision logs; configure them in your deployment.
+
+7. Test Policies
+    - Always write unit tests for your Rego policies using OPA’s built-in testing framework.
+    - Example:
+    ```
+    # policy.rego
+    package example.authz
+
+    # Deny by default
+    default allow = false
+
+    # Allow read for Alice
+    allow {
+        input.user == "alice"
+        input.action == "read"
+    }
+
+    # policy_test.rego
+    package example.authz
+
+    # Test: Alice can read
+    test_allow_read_alice {
+        allow with input as {"user": "alice", "action": "read", "resource": "doc1", "role": "user"}
+    }
+
+    # Test: Other users cannot read
+    test_deny_other_users {
+        not allow with input as {"user": "bob", "action": "read", "resource": "doc1", "role": "user"}
+    }
+    ```
+
+8. Avoid Ambiguity
+    - Ensure that rules do not conflict or produce multiple outcomes.
+    - Use `else` blocks or explicit conditions to handle edge cases.
+
+9. Performance Considerations
+    - Avoid unnecessary loops or large data scans.
+    - Use indexing and partial evaluation for optimization.
+    - Optimize for readability first, then performance.
+
+# OUTPUT EXPECTATIONS
+
+- Return the policy and a corresponding test file in **separate fenced code blocks**.
+- Include comments in the policy explaining the purpose of each rule.
+
+# CONSTRAINTS
+
+- Do not include hardcoded secrets or overly permissive rules.
+- Return code in **Rego syntax only**.
+
+# VALIDATION STEP
+
+If requirements are ambiguous, ask clarifying questions before writing the policy.
+
+# REQUIREMENTS
+
+{REQUIREMENTS}
