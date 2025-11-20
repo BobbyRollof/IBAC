@@ -1,6 +1,8 @@
-import datetime
+from datetime import datetime, timedelta, timezone
 from enum import Enum
-from fastapi import FastAPI, HTTPException, requests
+from typing import Any, Dict
+from fastapi import Body, FastAPI, HTTPException
+import requests
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 app = FastAPI()
@@ -70,13 +72,14 @@ class Resource(BaseModel):
 
 class Action(BaseModel):
     name: str  # Represents the action name (e.g., "can_read")
+    properties: Dict[str, Any]  # Additional properties for the action (e.g., {"method": "GET"})
 
     model_config = ConfigDict(extra="ignore")
 
 class Context(BaseModel):
     time: datetime  # Represents the timestamp context (e.g., ISO datetime string)
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
 
 class PEPRequest(BaseModel):
     """
@@ -111,29 +114,91 @@ def check_discretionary_signals(resource: Resource, context: dict) -> bool:
 
 def send_alert():
     # Placeholder function to send alerts
-    response_siem = requests.get("http://localhost:8003/siem")
-    response_risc = requests.get("http://localhost:8002/risc")
+    req = SharedSignalRequest(subject_id=SubjectId(format="email", email="malicious@rabobank.nl"))
+    response_siem = requests.post("http://localhost:8003/siem", json=req.model_dump())
+    response_risc = requests.post("http://localhost:8002/risc", json=req.model_dump())
     print(f"Alert sent to SIEM: {response_siem.json()}")
     print(f"Alert sent to RISC: {response_risc.json()}")
 
+
+def evaluate_with_authzen(req: PEPRequest) -> Dict[str, Any]:
+    """
+    Try to call a real AuthZEN client if available, otherwise apply local policy checks.
+    Returns a dict: {"decision": "permit"|"deny", "reason": "..."}
+    """
+    # Example attempt to call a real AuthZEN client (stubbed)
+    try:
+        import authzen  # type: ignore
+        client = authzen.Client()  # pseudo-code; replace with real client init
+        resp = client.evaluate(subject=req.subject.model_dump(),
+                               resource=req.resource.model_dump(),
+                               action=req.action.model_dump(),
+                               context=req.context.model_dump())
+        # assume resp contains {'allow': True/False, 'explain': '...'}
+        allow = bool(resp.get("allow"))
+        return {"decision": "permit" if allow else "deny", "reason": resp.get("explain", "")}
+    except Exception:
+        # Fall back to local checks if AuthZEN not present or call fails
+        # Basic shape checks
+        if req.subject.type != "user":
+            return {"decision": "deny", "reason": "subject type must be user"}
+        # if req.resource.type != "account":
+        #     return {"decision": "deny", "reason": "resource type must be account"}
+
+        # Only allow the specific action
+        if req.action.name != "can_read":
+            return {"decision": "deny", "reason": "action not allowed"}
+
+        method = req.action.properties.get("method", "").upper()
+        if method != "GET":
+            return {"decision": "deny", "reason": "only GET allowed"}
+
+        # Time freshness: ensure context.time is timezone-aware and recent
+        now = datetime.now(timezone.utc)
+        ctx_time = req.context.time
+        # try:
+        ctx_time_utc = ctx_time.astimezone(timezone.utc)
+        # except Exception:
+        #     return {"decision": "deny", "reason": "invalid context time"}
+
+        if now - ctx_time_utc > timedelta(hours=1):
+            send_alert()
+            return {"decision": "deny", "reason": "stale request time"}
+
+        # Example subject id constraint (email)
+        if "@" not in req.subject.id:
+            return {"decision": "deny", "reason": "invalid subject id"}
+
+        # Passed local checks
+        return {"decision": "permit", "reason": "passed local policy checks"}
+
+
 #http://localhost:8001
 @app.post("/access-control")
-def evaluate_access(request: PEPRequest):
+def evaluate_access(request: PEPRequest = Body()):
     resource = request.resource
-    context = request.context
+    context = request.context.model_dump()
 
     if not check_mandatory_signals(context):
-        send_alert()
         raise HTTPException(
             status_code=403,
             detail={"decision": "deny", "reason": "Mandatory signals check failed"}
         )
 
     if not check_discretionary_signals(resource, context):
-        send_alert()
         raise HTTPException(
             status_code=403,
             detail={"decision": "deny", "reason": "Discretionary signals check failed"}
         )
     
-    return {"decision": "allow", "reason": "Access granted"}
+    result_intent = evaluate_with_authzen(request)
+
+    if result_intent["decision"] == "permit":
+        return {"status": "permit", "message": result_intent.get("reason", "")}
+    
+    raise HTTPException(status_code=403, detail=result_intent.get("reason", "denied"))
+
+@app.get("/health")
+def test():
+    send_alert()
+    return {}

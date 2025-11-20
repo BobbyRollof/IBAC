@@ -1,6 +1,6 @@
 import datetime
 from enum import Enum
-from fastapi import FastAPI
+from fastapi import Body, FastAPI
 from pydantic import BaseModel, ConfigDict, EmailStr
 
 app = FastAPI()
@@ -14,6 +14,6 @@ class SharedSignalRequest(BaseModel):
 
 
 # http://localhost:8003
-@app.get("/siem")
-def evaluate_access(request: SharedSignalRequest):
-    return {"status": f"SIEM access control evaluation invoked. {request=}"}
+@app.post("/siem")
+def evaluate_access(request: SharedSignalRequest = Body()):
+    return {"status": f"SIEM access control evaluation invoked. {request.model_dump()}"}

@@ -12,6 +12,7 @@ from models.request import AuthRequest
 
 app = FastAPI()
 
+
 def evaluate_with_authzen(req) -> Dict[str, Any]:
     """
     Try to call a real AuthZEN client if available, otherwise apply local policy checks.
